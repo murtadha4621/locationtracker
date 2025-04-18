@@ -763,20 +763,29 @@ app.get('/photo/:filename', async (req, res) => {
 app.delete('/api/links/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        console.log(`Attempting to delete link with ID: ${id}`);
 
         // Find and delete the link
         const link = await Link.findOneAndDelete({ id });
 
         if (!link) {
+            console.log(`Link with ID ${id} not found`);
             return res.status(404).json({ error: 'Link not found' });
         }
 
-        // Delete all visits associated with this link
-        await Visit.deleteMany({ link_id: id });
+        console.log(`Successfully deleted link: ${link.name} (${link.id})`);
 
-        res.json({ success: true, message: 'Link and associated visits deleted successfully' });
+        // Delete all visits associated with this link
+        const deleteResult = await Visit.deleteMany({ link_id: id });
+        console.log(`Deleted ${deleteResult.deletedCount} visitor records for link ${id}`);
+
+        res.json({
+            success: true,
+            message: 'Link and associated visits deleted successfully',
+            deletedVisits: deleteResult.deletedCount
+        });
     } catch (error) {
-        console.error('Server error:', error);
+        console.error('Error deleting link:', error);
         res.status(500).json({ error: error.message });
     }
 });

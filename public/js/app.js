@@ -1,7 +1,8 @@
 // Global variables
-let map = null;
+let map;
 let markers = [];
 let currentLinkId = null;
+const host = window.location.origin;
 
 // Initialize the app when the DOM is fully loaded
 document.addEventListener('DOMContentLoaded', function () {
@@ -28,10 +29,40 @@ document.addEventListener('DOMContentLoaded', function () {
     const visitsTable = document.getElementById('visitsTable');
     const noVisitsMessage = document.getElementById('noVisitsMessage');
     const copyButtons = document.querySelectorAll('.copy-btn');
+    const refreshLinksBtn = document.getElementById('refreshLinksBtn');
+    const refreshVisitsBtn = document.getElementById('refreshVisitsBtn');
+    const tabButtons = document.querySelectorAll('.tab');
+    const tabPanes = document.querySelectorAll('.tab-pane');
 
     // Event Listeners
-    createLinkBtn.addEventListener('click', createNewLink);
-    backToListBtn.addEventListener('click', showLinksList);
+    if (createLinkBtn) {
+        createLinkBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            createNewLink();
+        });
+    }
+
+    if (backToListBtn) {
+        backToListBtn.addEventListener('click', showLinksList);
+    }
+
+    if (refreshLinksBtn) {
+        refreshLinksBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            loadLinks();
+            showToast('Links refreshed', 'success');
+        });
+    }
+
+    if (refreshVisitsBtn) {
+        refreshVisitsBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (currentLinkId) {
+                viewLinkDetails(currentLinkId);
+                showToast('Visits refreshed', 'success');
+            }
+        });
+    }
 
     // Set up delete button in detail view
     if (deleteLinkDetailBtn) {
@@ -44,7 +75,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Setup copy buttons
     copyButtons.forEach(btn => {
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
             const targetId = this.getAttribute('data-target');
             const inputElement = document.getElementById(targetId);
             if (inputElement) {
@@ -53,24 +85,46 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    // Setup tab buttons
+    tabButtons.forEach(tab => {
+        tab.addEventListener('click', function (e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('data-target');
+
+            // Remove active class from all tabs and tab panes
+            tabButtons.forEach(t => t.classList.remove('active'));
+            tabPanes.forEach(p => p.classList.remove('active'));
+
+            // Add active class to clicked tab and its target pane
+            this.classList.add('active');
+            document.getElementById(targetId).classList.add('active');
+        });
+    });
+
     // Input validation
-    linkNameInput.addEventListener('keyup', function (event) {
-        if (event.key === 'Enter') {
-            customUrlInput.focus();
-        }
-    });
+    if (linkNameInput) {
+        linkNameInput.addEventListener('keyup', function (event) {
+            if (event.key === 'Enter') {
+                customUrlInput.focus();
+            }
+        });
+    }
 
-    customUrlInput.addEventListener('keyup', function (event) {
-        if (event.key === 'Enter') {
-            customSlugInput.focus();
-        }
-    });
+    if (customUrlInput) {
+        customUrlInput.addEventListener('keyup', function (event) {
+            if (event.key === 'Enter') {
+                customSlugInput.focus();
+            }
+        });
+    }
 
-    customSlugInput.addEventListener('keyup', function (event) {
-        if (event.key === 'Enter') {
-            createNewLink();
-        }
-    });
+    if (customSlugInput) {
+        customSlugInput.addEventListener('keyup', function (event) {
+            if (event.key === 'Enter') {
+                createNewLink();
+            }
+        });
+    }
 
     // Load existing links on page load
     loadLinks();
@@ -82,21 +136,21 @@ document.addEventListener('DOMContentLoaded', function () {
         const customSlug = customSlugInput.value.trim();
 
         if (!linkName) {
-            alert('Please enter a name for your tracking link.');
+            showToast('Please enter a name for your tracking link', 'error');
             linkNameInput.focus();
             return;
         }
 
         // Validate custom URL if provided
         if (customUrl && !isValidUrl(customUrl)) {
-            alert('Please enter a valid URL starting with http:// or https://');
+            showToast('Please enter a valid URL starting with http:// or https://', 'error');
             customUrlInput.focus();
             return;
         }
 
         // Validate custom slug if provided
         if (customSlug && !/^[a-zA-Z0-9-_]+$/.test(customSlug)) {
-            alert('Custom slug can only contain letters, numbers, hyphens, and underscores.');
+            showToast('Custom slug can only contain letters, numbers, hyphens, and underscores', 'error');
             customSlugInput.focus();
             return;
         }
@@ -124,7 +178,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return response.json();
             })
             .then(data => {
-                console.log('Link created:', data); // Add debugging
+                console.log('Link created:', data);
 
                 // Display the new links
                 if (data && data.url) {
@@ -136,6 +190,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
 
                     newLinkAlert.classList.remove('d-none');
+                    showToast('Tracking link created successfully!', 'success');
 
                     // Clear the input fields
                     linkNameInput.value = '';
@@ -146,12 +201,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     loadLinks();
                 } else {
                     console.error('Invalid response format:', data);
-                    alert('Error creating link: Invalid server response');
+                    showToast('Error creating link: Invalid server response', 'error');
                 }
             })
             .catch(error => {
                 console.error('Error creating link:', error);
-                alert(`Failed to create tracking link: ${error.message}`);
+                showToast(`Failed to create tracking link: ${error.message}`, 'error');
             });
     }
 
@@ -167,6 +222,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Function to load all tracking links
     function loadLinks() {
+        // Show loading indicator
+        document.getElementById('loadingLinks').classList.remove('d-none');
+        linksList.classList.add('d-none');
+
         fetch('/api/links')
             .then(response => {
                 if (!response.ok) {
@@ -175,7 +234,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 return response.json();
             })
             .then(links => {
-                console.log('Loaded links:', links); // Add debugging
+                console.log('Loaded links:', links);
+
+                // Hide loading indicator
+                document.getElementById('loadingLinks').classList.add('d-none');
+                linksList.classList.remove('d-none');
 
                 // Clear the links list
                 linksList.innerHTML = '';
@@ -196,77 +259,39 @@ document.addEventListener('DOMContentLoaded', function () {
                         return;
                     }
 
-                    const linkEl = document.createElement('div');
-                    linkEl.className = 'list-group-item list-group-item-action';
+                    const linkEl = document.createElement('a');
+                    linkEl.className = 'link-item';
+                    linkEl.href = '#';
 
-                    let redirectText = '';
+                    let redirectInfo = '';
                     if (link.custom_url) {
-                        redirectText = `<small class="text-muted">Redirects to: ${escapeHtml(link.custom_url)}</small>`;
+                        redirectInfo = `<div class="link-item-subtitle">Redirects to: ${escapeHtml(link.custom_url)}</div>`;
                     }
 
-                    // Show all available link types
-                    const linksHtml = `
-                        <div class="link-options mt-2">
-                            <small class="text-muted">
-                                <a href="#" class="link-type-toggle" data-id="${link.id}" data-type="standard">Standard</a> | 
-                                <a href="#" class="link-type-toggle" data-id="${link.id}" data-type="file">File</a> | 
-                                <a href="#" class="link-type-toggle" data-id="${link.id}" data-type="photo">Photo</a>
-                            </small>
-                        </div>
-                    `;
-
                     linkEl.innerHTML = `
-                        <div class="d-flex w-100 justify-content-between align-items-center">
-                            <h5 class="mb-1">${escapeHtml(link.name)}</h5>
-                            <div>
-                                <button class="btn btn-sm btn-danger delete-link-btn" data-id="${link.id}">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                                <small class="text-muted ms-2">${formatDate(link.created_at)}</small>
-                            </div>
+                        <div class="link-item-icon">
+                            <i class="fas fa-link"></i>
                         </div>
-                        <p class="mb-1 link-url" id="link-url-${link.id}">${link.url}</p>
-                        ${redirectText}
-                        ${linksHtml}
+                        <div class="link-item-content">
+                            <div class="link-item-title">${escapeHtml(link.name)}</div>
+                            <div class="link-item-subtitle">${escapeHtml(link.url)}</div>
+                            ${redirectInfo}
+                            <div class="link-item-subtitle">Created: ${formatDate(link.created_at)}</div>
+                        </div>
                     `;
 
-                    // Add click event to view link details (modified to exclude delete button)
+                    // Add click event to view link details
                     linkEl.addEventListener('click', function (e) {
-                        // Don't trigger if clicking on delete button or its icon
-                        if (e.target.classList.contains('delete-link-btn') ||
-                            (e.target.tagName === 'I' && e.target.parentElement.classList.contains('delete-link-btn'))) {
-                            e.preventDefault();
-                            e.stopPropagation();
-
-                            const linkId = e.target.closest('.delete-link-btn').getAttribute('data-id');
-                            if (confirm('Are you sure you want to delete this tracking link? This action cannot be undone.')) {
-                                deleteLink(linkId);
-                            }
-                            return;
-                        }
-
-                        // Don't trigger if clicking on a link-type-toggle
-                        if (e.target.classList.contains('link-type-toggle')) {
-                            e.preventDefault();
-                            const linkType = e.target.getAttribute('data-type');
-                            const linkId = e.target.getAttribute('data-id');
-                            const linkUrlElement = document.getElementById(`link-url-${linkId}`);
-
-                            if (linkUrlElement) {
-                                // Change the displayed URL based on type
-                                if (linkType === 'standard') {
-                                    linkUrlElement.textContent = link.url;
-                                } else if (linkType === 'file' && link.masked_urls && link.masked_urls.file) {
-                                    linkUrlElement.textContent = link.masked_urls.file;
-                                } else if (linkType === 'photo' && link.masked_urls && link.masked_urls.photo) {
-                                    linkUrlElement.textContent = link.masked_urls.photo;
-                                }
-                            }
-                            return;
-                        }
-
-                        // Regular click - show details
+                        e.preventDefault();
                         viewLinkDetails(link.id);
+
+                        // Clear active class from all links
+                        document.querySelectorAll('.link-item').forEach(item => {
+                            item.classList.remove('link-item-active');
+                        });
+
+                        // Add active class to this link
+                        linkEl.classList.add('link-item-active');
                     });
 
                     linksList.appendChild(linkEl);
@@ -274,13 +299,18 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .catch(error => {
                 console.error('Error loading links:', error);
-                linksList.innerHTML = `<div class="alert alert-danger">Failed to load tracking links: ${error.message}</div>`;
+                document.getElementById('loadingLinks').classList.add('d-none');
+                linksList.classList.remove('d-none');
+                showToast(`Failed to load tracking links: ${error.message}`, 'error');
             });
     }
 
     // Function to view link details
     function viewLinkDetails(linkId) {
         currentLinkId = linkId;
+
+        // Show loading indicator
+        document.getElementById('loadingVisits').classList.remove('d-none');
 
         fetch(`/api/links/${linkId}`)
             .then(response => {
@@ -290,7 +320,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 return response.json();
             })
             .then(data => {
-                console.log('Link details:', data); // Add debugging
+                console.log('Link details:', data);
+
+                // Hide loading indicator
+                document.getElementById('loadingVisits').classList.add('d-none');
 
                 // Update UI with link details
                 selectedLinkName.innerText = escapeHtml(data.name);
@@ -306,6 +339,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Show custom URL if available
                 if (data.custom_url) {
                     customUrlValue.textContent = data.custom_url;
+                    customUrlValue.href = data.custom_url;
                     customUrlDisplay.classList.remove('d-none');
                 } else {
                     customUrlDisplay.classList.add('d-none');
@@ -314,13 +348,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Clear the visits table
                 visitsTable.innerHTML = '';
 
-                // Show/hide elements
+                // Show the details section
                 linkDetails.classList.remove('d-none');
-                document.querySelector('.row.mb-4').classList.add('d-none');
 
                 if (data.visits && data.visits.length > 0) {
                     // Hide the "no visits" message
                     noVisitsMessage.classList.add('d-none');
+                    document.querySelector('.table-responsive').style.display = 'block';
 
                     // Populate the visits table
                     data.visits.forEach(visit => {
@@ -351,7 +385,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${escapeHtml(locationInfo)}</td>
                             <td>${escapeHtml(sourceLabel)}</td>
                             <td>${escapeHtml(visit.ip_address || 'Unknown')}</td>
-                            <td><div class="user-agent-cell" title="${escapeHtml(visit.user_agent || 'Unknown')}">${escapeHtml(visit.user_agent || 'Unknown')}</div></td>
+                            <td><div title="${escapeHtml(visit.user_agent || 'Unknown')}">${escapeHtml(visit.user_agent || 'Unknown')}</div></td>
                         `;
                         visitsTable.appendChild(row);
                     });
@@ -365,18 +399,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 } else {
                     // Show the "no visits" message
                     noVisitsMessage.classList.remove('d-none');
+                    document.querySelector('.table-responsive').style.display = 'none';
                 }
             })
             .catch(error => {
                 console.error('Error loading link details:', error);
-                alert('Failed to load link details. Please try again.');
+                document.getElementById('loadingVisits').classList.add('d-none');
+                showToast('Failed to load link details. Please try again.', 'error');
             });
     }
 
     // Function to show the links list (go back)
     function showLinksList() {
         linkDetails.classList.add('d-none');
-        document.querySelector('.row.mb-4').classList.remove('d-none');
         currentLinkId = null;
     }
 
@@ -390,19 +425,20 @@ document.addEventListener('DOMContentLoaded', function () {
         navigator.clipboard.writeText(inputElement.value)
             .then(() => {
                 // Visual feedback
-                const originalHtml = buttonElement.innerHTML;
-                buttonElement.classList.add('copy-success');
-                buttonElement.innerHTML = '<i class="bi bi-check"></i> Copied';
+                const originalText = buttonElement.innerHTML;
+                buttonElement.innerHTML = '<i class="fas fa-check"></i> Copied';
+
+                // Show toast notification
+                showToast('Copied to clipboard!', 'success');
 
                 // Reset button after a delay
                 setTimeout(() => {
-                    buttonElement.classList.remove('copy-success');
-                    buttonElement.innerHTML = originalHtml;
+                    buttonElement.innerHTML = originalText;
                 }, 2000);
             })
             .catch(err => {
                 console.error('Error copying text: ', err);
-                alert('Failed to copy to clipboard');
+                showToast('Failed to copy to clipboard', 'error');
             });
     }
 
@@ -445,94 +481,128 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 // Show success message
-                alert('Link deleted successfully');
+                showToast('Link deleted successfully', 'success');
             })
             .catch(error => {
                 console.error('Error deleting link:', error);
-                alert(`Failed to delete link: ${error.message}`);
+                showToast(`Failed to delete link: ${error.message}`, 'error');
             });
     }
-});
 
-// Initialize Google Map
-function initMap() {
-    map = new google.maps.Map(document.getElementById('map'), {
-        center: { lat: 0, lng: 0 },
-        zoom: 2,
-        styles: [
-            {
-                featureType: 'poi',
-                stylers: [{ visibility: 'off' }]
-            }
-        ]
-    });
+    // Toast notification function
+    function showToast(message, type = 'info') {
+        const toastContainer = document.querySelector('.toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
 
-    if (currentLinkId) {
-        fetch(`/api/links/${currentLinkId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.visits && data.visits.length > 0) {
-                    updateMapMarkers(data.visits);
+        let icon = 'info-circle';
+        if (type === 'success') icon = 'check-circle';
+        if (type === 'error') icon = 'exclamation-circle';
+        if (type === 'warning') icon = 'exclamation-triangle';
+
+        toast.innerHTML = `
+            <div class="toast-icon">
+                <i class="fas fa-${icon}"></i>
+            </div>
+            <div class="toast-content">
+                <div class="toast-message">${escapeHtml(message)}</div>
+            </div>
+        `;
+
+        toastContainer.appendChild(toast);
+
+        // Remove toast after 3 seconds
+        setTimeout(() => {
+            toast.classList.add('hiding');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, 3000);
+    }
+
+    // Initialize Google Map
+    window.initMap = function () {
+        map = new google.maps.Map(document.getElementById('map'), {
+            zoom: 2,
+            center: { lat: 10, lng: 0 },
+            styles: [
+                {
+                    featureType: 'water',
+                    elementType: 'geometry',
+                    stylers: [{ color: '#e9e9e9' }, { lightness: 17 }]
+                },
+                {
+                    featureType: 'landscape',
+                    elementType: 'geometry',
+                    stylers: [{ color: '#f5f5f5' }, { lightness: 20 }]
+                },
+                {
+                    featureType: 'road.highway',
+                    elementType: 'geometry.fill',
+                    stylers: [{ color: '#ffffff' }, { lightness: 17 }]
+                },
+                {
+                    featureType: 'administrative',
+                    elementType: 'geometry.stroke',
+                    stylers: [{ color: '#fefefe' }, { lightness: 17 }, { weight: 1.2 }]
                 }
-            })
-            .catch(error => {
-                console.error('Error loading visits for map:', error);
+            ]
+        });
+    };
+
+    // Update map markers from visit data
+    function updateMapMarkers(visits) {
+        // Clear existing markers
+        markers.forEach(marker => marker.setMap(null));
+        markers = [];
+
+        if (!visits || visits.length === 0) return;
+
+        const bounds = new google.maps.LatLngBounds();
+
+        // Add new markers
+        visits.forEach(visit => {
+            if (!visit.latitude || !visit.longitude) return;
+
+            const position = {
+                lat: parseFloat(visit.latitude),
+                lng: parseFloat(visit.longitude)
+            };
+
+            const marker = new google.maps.Marker({
+                position,
+                map,
+                title: `Visit on ${new Date(visit.visited_at).toLocaleString()}`,
+                animation: google.maps.Animation.DROP
             });
-    }
-}
 
-// Update map markers from visit data
-function updateMapMarkers(visits) {
-    // Clear existing markers
-    markers.forEach(marker => marker.setMap(null));
-    markers = [];
+            // Add info window with visit details
+            const infoWindow = new google.maps.InfoWindow({
+                content: `
+                    <div class="info-window">
+                        <h6>Visit Details</h6>
+                        <p><strong>Time:</strong> ${new Date(visit.visited_at).toLocaleString()}</p>
+                        <p><strong>Coordinates:</strong> ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}</p>
+                    </div>
+                `
+            });
 
-    if (!visits || visits.length === 0) return;
+            marker.addListener('click', () => {
+                infoWindow.open(map, marker);
+            });
 
-    const bounds = new google.maps.LatLngBounds();
-
-    // Add new markers
-    visits.forEach(visit => {
-        if (!visit.latitude || !visit.longitude) return;
-
-        const position = {
-            lat: parseFloat(visit.latitude),
-            lng: parseFloat(visit.longitude)
-        };
-
-        const marker = new google.maps.Marker({
-            position,
-            map,
-            title: `Visit on ${new Date(visit.visited_at).toLocaleString()}`,
-            animation: google.maps.Animation.DROP
+            markers.push(marker);
+            bounds.extend(position);
         });
 
-        // Add info window with visit details
-        const infoWindow = new google.maps.InfoWindow({
-            content: `
-                <div style="max-width: 200px;">
-                    <h6 style="margin-bottom: 5px;">Visit Details</h6>
-                    <p style="margin: 2px 0;"><strong>Time:</strong> ${new Date(visit.visited_at).toLocaleString()}</p>
-                    <p style="margin: 2px 0;"><strong>Coordinates:</strong> ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}</p>
-                </div>
-            `
-        });
-
-        marker.addListener('click', () => {
-            infoWindow.open(map, marker);
-        });
-
-        markers.push(marker);
-        bounds.extend(position);
-    });
-
-    // Fit map to the markers
-    if (markers.length > 0) {
-        if (markers.length === 1) {
-            map.setCenter(markers[0].getPosition());
-            map.setZoom(13);
-        } else {
-            map.fitBounds(bounds);
+        // Fit map to the markers
+        if (markers.length > 0) {
+            if (markers.length === 1) {
+                map.setCenter(markers[0].getPosition());
+                map.setZoom(13);
+            } else {
+                map.fitBounds(bounds);
+            }
         }
     }
-} 
+}); 
