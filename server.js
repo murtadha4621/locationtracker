@@ -286,20 +286,51 @@ app.get('/t/:id', async (req, res) => {
         }
 
         if (link.custom_url) {
-            // Send HTML yang melakukan pelacakan dan redirect otomatis
+            // Ambil metadata dari URL tujuan
+            let ogMetadata = {
+                title: link.name || 'Shared Link',
+                description: 'Click to continue',
+                image: '',
+                url: link.custom_url
+            };
+
+            // Coba ambil metadata asli dari URL tujuan
+            try {
+                const metadata = await getMetaData(link.custom_url);
+                if (metadata) {
+                    ogMetadata.title = metadata.title || ogMetadata.title;
+                    ogMetadata.description = metadata.description || ogMetadata.description;
+                    ogMetadata.image = metadata.image || ogMetadata.image;
+                    console.log('Metadata fetched:', ogMetadata);
+                }
+            } catch (metaError) {
+                console.error('Error fetching metadata:', metaError);
+                // Tetap gunakan default metadata jika terjadi error
+            }
+
+            // Send HTML yang melakukan pelacakan dan redirect otomatis dengan metadata asli
             const html = `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Redirecting...</title>
-                ${link.custom_url ? `
-                <meta property="og:title" content="${link.name || 'Shared Link'}">
-                <meta property="og:description" content="Click to continue">
-                <meta property="og:url" content="${link.custom_url}">
-                <meta name="twitter:card" content="summary_large_image">
-                ` : ''}
+                <title>${ogMetadata.title}</title>
+                
+                <!-- Open Graph / Facebook -->
+                <meta property="og:type" content="website">
+                <meta property="og:url" content="${ogMetadata.url}">
+                <meta property="og:title" content="${ogMetadata.title}">
+                <meta property="og:description" content="${ogMetadata.description}">
+                ${ogMetadata.image ? `<meta property="og:image" content="${ogMetadata.image}">` : ''}
+                
+                <!-- Twitter -->
+                <meta property="twitter:card" content="summary_large_image">
+                <meta property="twitter:url" content="${ogMetadata.url}">
+                <meta property="twitter:title" content="${ogMetadata.title}">
+                <meta property="twitter:description" content="${ogMetadata.description}">
+                ${ogMetadata.image ? `<meta property="twitter:image" content="${ogMetadata.image}">` : ''}
+                
                 <style>
                     body {
                         font-family: Arial, sans-serif;
@@ -402,20 +433,50 @@ app.get('/file/:filename', async (req, res) => {
         }
 
         if (matchedLink.custom_url) {
-            // Send HTML yang melakukan pelacakan dan redirect otomatis
+            // Ambil metadata dari URL tujuan
+            let ogMetadata = {
+                title: matchedLink.name || 'Shared Document',
+                description: 'Click to open the document',
+                image: '',
+                url: matchedLink.custom_url
+            };
+
+            // Coba ambil metadata asli dari URL tujuan
+            try {
+                const metadata = await getMetaData(matchedLink.custom_url);
+                if (metadata) {
+                    ogMetadata.title = metadata.title || ogMetadata.title;
+                    ogMetadata.description = metadata.description || ogMetadata.description;
+                    ogMetadata.image = metadata.image || ogMetadata.image;
+                }
+            } catch (metaError) {
+                console.error('Error fetching metadata:', metaError);
+                // Tetap gunakan default metadata jika terjadi error
+            }
+
+            // Send HTML yang melakukan pelacakan dan redirect otomatis dengan metadata asli
             const html = `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Redirecting...</title>
-                ${matchedLink.custom_url ? `
-                <meta property="og:title" content="${matchedLink.name || 'Shared Document'}">
-                <meta property="og:description" content="Click to open the document">
-                <meta property="og:url" content="${matchedLink.custom_url}">
-                <meta name="twitter:card" content="summary_large_image">
-                ` : ''}
+                <title>${ogMetadata.title}</title>
+                
+                <!-- Open Graph / Facebook -->
+                <meta property="og:type" content="website">
+                <meta property="og:url" content="${ogMetadata.url}">
+                <meta property="og:title" content="${ogMetadata.title}">
+                <meta property="og:description" content="${ogMetadata.description}">
+                ${ogMetadata.image ? `<meta property="og:image" content="${ogMetadata.image}">` : ''}
+                
+                <!-- Twitter -->
+                <meta property="twitter:card" content="summary_large_image">
+                <meta property="twitter:url" content="${ogMetadata.url}">
+                <meta property="twitter:title" content="${ogMetadata.title}">
+                <meta property="twitter:description" content="${ogMetadata.description}">
+                ${ogMetadata.image ? `<meta property="twitter:image" content="${ogMetadata.image}">` : ''}
+                
                 <style>
                     body {
                         font-family: Arial, sans-serif;
@@ -516,20 +577,50 @@ app.get('/photo/:filename', async (req, res) => {
         }
 
         if (link.custom_url) {
-            // Send HTML yang melakukan pelacakan dan redirect otomatis
+            // Ambil metadata dari URL tujuan
+            let ogMetadata = {
+                title: link.name || 'Shared Photo',
+                description: 'Click to view the photo',
+                image: '',
+                url: link.custom_url
+            };
+
+            // Coba ambil metadata asli dari URL tujuan
+            try {
+                const metadata = await getMetaData(link.custom_url);
+                if (metadata) {
+                    ogMetadata.title = metadata.title || ogMetadata.title;
+                    ogMetadata.description = metadata.description || ogMetadata.description;
+                    ogMetadata.image = metadata.image || ogMetadata.image;
+                }
+            } catch (metaError) {
+                console.error('Error fetching metadata:', metaError);
+                // Tetap gunakan default metadata jika terjadi error
+            }
+
+            // Send HTML yang melakukan pelacakan dan redirect otomatis dengan metadata asli
             const html = `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Redirecting...</title>
-                ${link.custom_url ? `
-                <meta property="og:title" content="${link.name || 'Shared Photo'}">
-                <meta property="og:description" content="Click to view the photo">
-                <meta property="og:url" content="${link.custom_url}">
-                <meta name="twitter:card" content="summary_large_image">
-                ` : ''}
+                <title>${ogMetadata.title}</title>
+                
+                <!-- Open Graph / Facebook -->
+                <meta property="og:type" content="website">
+                <meta property="og:url" content="${ogMetadata.url}">
+                <meta property="og:title" content="${ogMetadata.title}">
+                <meta property="og:description" content="${ogMetadata.description}">
+                ${ogMetadata.image ? `<meta property="og:image" content="${ogMetadata.image}">` : ''}
+                
+                <!-- Twitter -->
+                <meta property="twitter:card" content="summary_large_image">
+                <meta property="twitter:url" content="${ogMetadata.url}">
+                <meta property="twitter:title" content="${ogMetadata.title}">
+                <meta property="twitter:description" content="${ogMetadata.description}">
+                ${ogMetadata.image ? `<meta property="twitter:image" content="${ogMetadata.image}">` : ''}
+                
                 <style>
                     body {
                         font-family: Arial, sans-serif;
