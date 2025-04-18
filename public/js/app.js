@@ -325,10 +325,31 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Populate the visits table
                     data.visits.forEach(visit => {
                         const row = document.createElement('tr');
+
+                        // Format location information
+                        let locationInfo = 'Unknown';
+                        if (visit.city || visit.region || visit.country) {
+                            const locationParts = [];
+                            if (visit.city) locationParts.push(visit.city);
+                            if (visit.region) locationParts.push(visit.region);
+                            if (visit.country) locationParts.push(visit.country);
+                            locationInfo = locationParts.join(', ');
+                        }
+
+                        // Determine source label
+                        let sourceLabel = 'Unknown';
+                        if (visit.location_source === 'browser') {
+                            sourceLabel = 'Browser GPS';
+                        } else if (visit.location_source === 'ip') {
+                            sourceLabel = 'IP Geolocation';
+                        }
+
                         row.innerHTML = `
                             <td>${formatDate(visit.visited_at)}</td>
-                            <td>${visit.latitude}</td>
-                            <td>${visit.longitude}</td>
+                            <td>${visit.latitude ? visit.latitude.toFixed(6) : 'N/A'}</td>
+                            <td>${visit.longitude ? visit.longitude.toFixed(6) : 'N/A'}</td>
+                            <td>${escapeHtml(locationInfo)}</td>
+                            <td>${escapeHtml(sourceLabel)}</td>
                             <td>${escapeHtml(visit.ip_address || 'Unknown')}</td>
                             <td><div class="user-agent-cell" title="${escapeHtml(visit.user_agent || 'Unknown')}">${escapeHtml(visit.user_agent || 'Unknown')}</div></td>
                         `;

