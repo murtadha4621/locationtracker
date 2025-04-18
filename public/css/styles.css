@@ -1,0 +1,97 @@
+/* Common Styles */
+body {
+    background-color: #f8f9fa;
+    color: #212529;
+}
+
+.card {
+    border: none;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+}
+
+/* Links List */
+.list-group-item {
+    border: 1px solid #e9ecef;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.list-group-item:hover {
+    background-color: #e9ecef;
+    cursor: pointer;
+}
+
+.list-group-item .badge {
+    font-size: 0.8rem;
+}
+
+.list-group-item .link-url {
+    font-size: 0.85rem;
+    color: #6c757d;
+    word-break: break-all;
+}
+
+/* Map */
+#map {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Utilities */
+.cursor-pointer {
+    cursor: pointer;
+}
+
+/* Copy URL button animation */
+.copy-success {
+    background-color: #28a745;
+    border-color: #28a745;
+    color: white;
+    transition: all 0.3s ease;
+}
+
+/* Tables */
+.table {
+    font-size: 0.9rem;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+
+/* Link creation form */
+#linkName {
+    border-radius: 4px;
+}
+
+/* User Agent display */
+.user-agent-cell {
+    max-width: 400px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    position: relative;
+    cursor: help;
+}
+
+.user-agent-cell:hover {
+    white-space: normal;
+    overflow: visible;
+    background-color: #f8f9fa;
+    position: absolute;
+    z-index: 1000;
+    border: 1px solid #dee2e6;
+    padding: 5px;
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    word-wrap: break-word;
+    max-width: 600px;
+}
