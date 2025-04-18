@@ -13,7 +13,9 @@
         "cors": "^2.8.5",
         "mongodb": "^5.0.0",
         "mongoose": "^7.0.0",
-        "dotenv": "^16.0.3"
+        "dotenv": "^16.0.3",
+        "metadata-scraper": "^0.2.61",
+        "node-fetch": "^2.6.7"
     },
     "devDependencies": {
         "nodemon": "^2.0.22"

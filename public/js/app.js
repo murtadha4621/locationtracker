@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const customUrlDisplay = document.getElementById('customUrlDisplay');
     const customUrlValue = document.getElementById('customUrlValue');
     const backToListBtn = document.getElementById('backToListBtn');
+    const deleteLinkDetailBtn = document.getElementById('deleteLinkDetailBtn');
     const visitsTable = document.getElementById('visitsTable');
     const noVisitsMessage = document.getElementById('noVisitsMessage');
     const copyButtons = document.querySelectorAll('.copy-btn');
@@ -31,6 +32,15 @@ document.addEventListener('DOMContentLoaded', function () {
     // Event Listeners
     createLinkBtn.addEventListener('click', createNewLink);
     backToListBtn.addEventListener('click', showLinksList);
+
+    // Set up delete button in detail view
+    if (deleteLinkDetailBtn) {
+        deleteLinkDetailBtn.addEventListener('click', function () {
+            if (currentLinkId && confirm('Are you sure you want to delete this tracking link? This action cannot be undone.')) {
+                deleteLink(currentLinkId);
+            }
+        });
+    }
 
     // Setup copy buttons
     copyButtons.forEach(btn => {
@@ -208,15 +218,33 @@ document.addEventListener('DOMContentLoaded', function () {
                     linkEl.innerHTML = `
                         <div class="d-flex w-100 justify-content-between align-items-center">
                             <h5 class="mb-1">${escapeHtml(link.name)}</h5>
-                            <small class="text-muted">${formatDate(link.created_at)}</small>
+                            <div>
+                                <button class="btn btn-sm btn-danger delete-link-btn" data-id="${link.id}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                                <small class="text-muted ms-2">${formatDate(link.created_at)}</small>
+                            </div>
                         </div>
                         <p class="mb-1 link-url" id="link-url-${link.id}">${link.url}</p>
                         ${redirectText}
                         ${linksHtml}
                     `;
 
-                    // Add click event to view link details
+                    // Add click event to view link details (modified to exclude delete button)
                     linkEl.addEventListener('click', function (e) {
+                        // Don't trigger if clicking on delete button or its icon
+                        if (e.target.classList.contains('delete-link-btn') ||
+                            (e.target.tagName === 'I' && e.target.parentElement.classList.contains('delete-link-btn'))) {
+                            e.preventDefault();
+                            e.stopPropagation();
+
+                            const linkId = e.target.closest('.delete-link-btn').getAttribute('data-id');
+                            if (confirm('Are you sure you want to delete this tracking link? This action cannot be undone.')) {
+                                deleteLink(linkId);
+                            }
+                            return;
+                        }
+
                         // Don't trigger if clicking on a link-type-toggle
                         if (e.target.classList.contains('link-type-toggle')) {
                             e.preventDefault();
@@ -373,6 +401,35 @@ document.addEventListener('DOMContentLoaded', function () {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    // Function to delete a tracking link
+    function deleteLink(linkId) {
+        fetch(`/api/links/${linkId}`, {
+            method: 'DELETE'
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Refresh the links list
+                loadLinks();
+
+                // If we're viewing the details of the deleted link, go back to the list
+                if (currentLinkId === linkId) {
+                    showLinksList();
+                }
+
+                // Show success message
+                alert('Link deleted successfully');
+            })
+            .catch(error => {
+                console.error('Error deleting link:', error);
+                alert(`Failed to delete link: ${error.message}`);
+            });
     }
 });
 
